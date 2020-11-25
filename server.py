@@ -1,6 +1,7 @@
 import sys
 import socket
 import threading
+import json
 
 class Server():
 
@@ -8,7 +9,7 @@ class Server():
         self.ip_address = ip_address
         self.port = port
         self.my_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.connections = []
+        self.connections = {}
         self.my_socket.bind((ip_address, port))
         self.my_socket.listen()
         print("Server started on {}:{}".format(ip_address, port))
@@ -16,20 +17,23 @@ class Server():
     def awaitConnections(self):
         while True:
             connection, address = self.my_socket.accept()
-            name = connection.recv(1024).decode()
-            self.connections.append((connection, name))
-            threading.Thread(target=self.awaitMessage, args=(connection, name)).start()
+            data = json.loads(connection.recv(1024).decode())
+            self.connections[connection] = {"name": data["name"],
+                                            "chatroom": data["chatroom"]}
+            self.broadcast(data["message"], connection)
+            threading.Thread(target=self.awaitMessage, args=(connection,)).start()
 
-    def broadcast(self, message, client, name):
+    def broadcast(self, message, client):
         #print("Here")
         for connection in self.connections:
-            if connection[0] != client:
-                connection[0].send((name +  ": " + message).encode())
+            if connection != client and self.connections[connection]["chatroom"] == self.connections[client]["chatroom"]:
+                data = {"message": message}
+                connection.send(json.dumps(data).encode())
 
-    def awaitMessage(self, connection, name):
+    def awaitMessage(self, connection):
         while True:
-            message = connection.recv(1024).decode()
-            self.broadcast(message, connection, name)
+            data = json.loads(connection.recv(1024).decode())
+            self.broadcast((self.connections[connection]["name"] +  ": " + data["message"]), connection)
 def main():
     if len(sys.argv) == 3:
         ip_address = sys.argv[1]
